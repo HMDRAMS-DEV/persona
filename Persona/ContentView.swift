@@ -5,6 +5,20 @@ struct ContentView: View {
 
     var body: some View {
         Group {
+            if case .ready = store.status {
+                screen
+            } else {
+                SetupView()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas)
+        .ignoresSafeArea()
+        .animation(.smooth, value: store.status)
+    }
+
+    @ViewBuilder private var screen: some View {
+        Group {
             switch store.screen {
             case .gallery: GalleryView()
             case .create: CreateView()
@@ -17,10 +31,85 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvas)
-        .ignoresSafeArea()
         .animation(.smooth, value: store.screen)
+    }
+}
+
+// MARK: - Setup
+
+/// Shown until Glimmer is up: the first-launch download, loading, or why it failed, with what this Mac needs.
+struct SetupView: View {
+    @Environment(Store.self) private var store
+
+    private let memory = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+    private let disk = Double((try? FileManager.default.homeDirectoryForCurrentUser
+        .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage) ?? 0) / 1e9
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            Spacer()
+            VStack(alignment: .leading, spacing: 10) {
+                Text(headline).display(52)
+                Text(subline)
+                    .font(.system(size: 19)).foregroundStyle(Theme.muted)
+                    .frame(maxWidth: 620, alignment: .leading)
+            }
+            switch store.status {
+            case .failed(let message):
+                Text(message).font(.system(size: 15)).foregroundStyle(Theme.hot)
+                    .frame(maxWidth: 620, alignment: .leading)
+                Button("Try again") { Task { await store.start() } }
+                    .buttonStyle(PillButtonStyle())
+            default:
+                if let downloaded = store.downloaded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ProgressView(value: min(Double(downloaded) / Double(Server.weightsSize), 1))
+                            .tint(Theme.accent)
+                        Text(String(format: "%.1f of %.1f GB", Double(downloaded) / 1e9, Double(Server.weightsSize) / 1e9))
+                            .font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.muted).monospacedDigit()
+                    }
+                    .frame(maxWidth: 620)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                requirement("Apple silicon Mac", detail: "Glimmer runs on the GPU with MLX.", met: true)
+                requirement("32 GB of memory or more", detail: String(format: "This Mac has %.0f GB.", memory), met: memory >= 32)
+                requirement("20 GB of free disk", detail: store.downloaded == nil && !failed ? "Glimmer is already downloaded." : String(format: "This Mac has %.0f GB free.", disk), met: disk >= 20 || store.downloaded == nil && !failed)
+            }
+            .padding(8)
+            .frame(maxWidth: 620, alignment: .leading)
+            .cardStyle()
+            Spacer()
+        }
+        .padding(.horizontal, 48)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var failed: Bool {
+        if case .failed = store.status { return true }
+        return false
+    }
+
+    private var headline: String {
+        if failed { return "Glimmer didn't start." }
+        return store.downloaded == nil ? "Waking Glimmer." : "Downloading Glimmer."
+    }
+
+    private var subline: String {
+        if failed { return "Check that this Mac meets the needs below, then try again." }
+        if store.downloaded == nil { return "Loading its weights into memory. This takes about a minute." }
+        return "First launch only. Glimmer runs on this Mac, so Persona fetches its 19 GB of open weights from Hugging Face. On a fast connection this takes 5 to 30 minutes. Leave the app open."
+    }
+
+    private func requirement(_ title: String, detail: String, met: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Circle().fill(met ? Theme.slack : Theme.hot).frame(width: 9, height: 9)
+            Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
+            Spacer()
+            Text(detail).font(.system(size: 15)).foregroundStyle(met ? Theme.muted : Theme.hot)
+        }
     }
 }
 

@@ -19,8 +19,40 @@ enum Server {
         return try? JSONDecoder().decode(Health.self, from: data)
     }
 
+    /// Where Hugging Face keeps Glimmer's weights. The server downloads them there on first launch.
+    static let weights: URL = {
+        let env = ProcessInfo.processInfo.environment
+        let hub = env["HF_HUB_CACHE"].map { URL(fileURLWithPath: $0) }
+            ?? env["HF_HOME"].map { URL(fileURLWithPath: $0).appending(path: "hub") }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".cache/huggingface/hub")
+        let model = env["PERSONA_MODEL"] ?? "mlx-community/Muse-Glimmer-30B-4bit"
+        return hub.appending(path: "models--" + model.replacingOccurrences(of: "/", with: "--"))
+    }()
+
+    /// Size of Glimmer's weights, from its safetensors index.
+    static let weightsSize: Int64 = 19_414_521_856
+
+    /// Bytes of weights on disk, or nil once every shard is there.
+    static func download() -> Int64? {
+        let files = FileManager.default
+        let snapshots = (try? files.contentsOfDirectory(at: weights.appending(path: "snapshots"), includingPropertiesForKeys: nil)) ?? []
+        for snapshot in snapshots {
+            guard let data = try? Data(contentsOf: snapshot.appending(path: "model.safetensors.index.json")),
+                  let index = try? JSONDecoder().decode(WeightIndex.self, from: data) else { continue }
+            if Set(index.weight_map.values).allSatisfy({ files.fileExists(atPath: snapshot.appending(path: $0).path) }) { return nil }
+        }
+        // Finished shards are symlinked into a snapshot; the one in flight is a .incomplete blob.
+        let blobs = (try? files.contentsOfDirectory(at: weights.appending(path: "blobs"), includingPropertiesForKeys: nil)) ?? []
+        let shards = snapshots.flatMap { (try? files.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+            .filter { $0.pathExtension == "safetensors" }
+        return (blobs.filter { $0.pathExtension == "incomplete" } + shards.map { $0.resolvingSymlinksInPath() })
+            .reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+    }
+
+    static var running: Bool { process?.isRunning ?? false }
+
     static func launch() throws {
-        guard process == nil else { return }
+        guard !running else { return }
         let p = Process()
         p.executableURL = root.appending(path: ".venv/bin/python")
         p.arguments = [root.appending(path: "server/persona.py").path]
@@ -115,6 +147,8 @@ enum Server {
         try await send("judge", method: "POST", ["persona": persona, "question": question, "answer": answer])
     }
 }
+
+private struct WeightIndex: Decodable { let weight_map: [String: String] }
 
 /// One server-sent event: a chat token, a building step, a finished persona, or an error.
 struct Event: Decodable, Sendable {

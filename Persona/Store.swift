@@ -30,6 +30,8 @@ final class Store {
     enum Screen: Equatable { case gallery, create, chat }
 
     var status: Status = .starting
+    /// Bytes of Glimmer's weights fetched so far, while the first launch downloads them.
+    var downloaded: Int64?
     var screen: Screen = .gallery
     var personas: [Persona] = []
     /// The persona being chatted with. Nil is plain Glimmer.
@@ -49,12 +51,14 @@ final class Store {
     private var pendingImports: [URL] = []
 
     func start() async {
+        status = .starting
         if await Server.health() == nil {
             do { try Server.launch() } catch { status = .failed(error.localizedDescription); return }
         }
-        // Loading 18 GB of weights takes a while on first launch.
-        for _ in 0..<240 {
+        // First launch downloads 19 GB of weights. After that, loading them takes about a minute.
+        while true {
             if let health = await Server.health() {
+                downloaded = nil
                 status = .ready("Layer \(health.layer) of \(health.layers)")
                 hasKey = health.key
                 await loadPersonas()
@@ -63,9 +67,16 @@ final class Store {
                 importFiles(pending)
                 return
             }
+            guard Server.running else {
+                let log = (try? String(contentsOf: Server.root.appending(path: "build/server.log"), encoding: .utf8)) ?? ""
+                // Python's last error line says why; download progress bars don't.
+                let reason = log.split(whereSeparator: \.isNewline).last { $0.contains("Error") }.map { String($0.prefix(240)) }
+                status = .failed(reason.map { "\($0). See build/server.log." } ?? "Glimmer stopped. See build/server.log.")
+                return
+            }
+            downloaded = Server.download()
             try? await Task.sleep(for: .seconds(1))
         }
-        status = .failed("Glimmer did not start. See build/server.log.")
     }
 
     func loadPersonas() async {

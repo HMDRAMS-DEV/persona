@@ -29,14 +29,21 @@ A persona vector is the difference in Glimmer's residual stream between replies 
 
 ## Run it
 
-Needs an Apple silicon Mac with 32 GB of memory or more, Python 3.12, and the Xcode Command Line Tools (macOS 26 SDK).
+**What it needs**
+
+- An Apple silicon Mac with **32 GB of memory or more**. Glimmer's 4-bit weights take about 19 GB of memory. Tested on an M5 Max with 64 GB.
+- **20 GB of free disk** for the weights.
+- Python 3.12 and the Xcode Command Line Tools (macOS 26 SDK).
+- A Meta Model API or OpenRouter key, only to make new personas.
 
 ```sh
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ./build.sh                    # builds build/Persona.app, no Xcode project
-open build/Persona.app        # starts the server; the first load of the weights takes about a minute
+open build/Persona.app        # starts the server
 ```
+
+**The first launch downloads Glimmer**, 19 GB from Hugging Face into `~/.cache/huggingface`. That takes 5 to 30 minutes on a fast connection. The app shows a setup screen with download progress and checks this Mac's memory and free disk. Later launches skip the download and take about a minute to load the weights. To download ahead of time, run `.venv/bin/hf download mlx-community/Muse-Glimmer-30B-4bit`.
 
 The first time you make a persona, the app asks for a [Meta Model API](https://dev.meta.ai) key or an [OpenRouter](https://openrouter.ai/keys) key and saves it to `.env`. You can also set `MODEL_API_KEY` or `OPENROUTER_API_KEY` there yourself (see `.env.example`). The starter personas chat without a key.
 
