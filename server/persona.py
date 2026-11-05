@@ -29,10 +29,28 @@ IMAGE = os.environ.get("PERSONA_IMAGE", "meta/muse-image")
 ENV = ROOT / ".env"
 # Muse Wonder and Muse Image run through OpenRouter or Meta Model API, whichever has a key. Meta wins if both do.
 PROVIDERS = {
-    "openrouter": {"var": "OPENROUTER_API_KEY", "check": "https://openrouter.ai/api/v1/key"},
-    "meta": {"var": "MODEL_API_KEY", "check": "https://api.meta.ai/v1/models"},
+    "openrouter": {"var": "OPENROUTER_API_KEY", "label": "OpenRouter"},
+    "meta": {"var": "MODEL_API_KEY", "label": "Meta"},
 }
 META = "https://api.meta.ai/v1"
+
+
+def reason(r):
+    """The provider's own error message, which says why (for example a Muse Code subscription key)."""
+    try:
+        return r.json()["error"]["message"]
+    except Exception:
+        return ""
+
+
+def check(name, key):
+    """A real request, since Meta lists models for keys it won't serve (Muse Code subscription keys)."""
+    headers = {"Authorization": f"Bearer {key}"}
+    if name == "openrouter":
+        return httpx.get("https://openrouter.ai/api/v1/key", headers=headers, timeout=20)
+    return httpx.post(f"{META}/chat/completions", headers=headers, timeout=60,
+                      json={"model": "muse-wonder-1.0", "max_completion_tokens": 16, "reasoning_effort": "minimal",
+                            "messages": [{"role": "user", "content": "Say ok."}]})
 
 
 def env_key(var):
@@ -244,10 +262,10 @@ def streamed(steps):
         try:
             yield from steps
         except httpx.HTTPStatusError as e:
-            where = "Meta" if provider() == "meta" else "OpenRouter"
+            where = PROVIDERS[provider()]["label"]
             if e.response.status_code in (401, 403):
                 KEYS[provider()] = ""  # /health now reports no key, so the app asks for one
-                yield event(error=f"{where} didn't accept your key. Enter a new one.")
+                yield event(error=f"{where} didn't accept your key. {reason(e.response) or 'Enter a new one.'}")
             elif e.response.status_code == 402:
                 yield event(error=f"Your {where} account is out of credits.")
             else:
@@ -273,13 +291,19 @@ def set_key(body: dict):
     if not key:
         raise HTTPException(400, "Paste an OpenRouter or Meta API key.")
     order = ["openrouter", "meta"] if key.startswith("sk-or-") else ["meta", "openrouter"]
-    try:
-        name = next((n for n in order if httpx.get(PROVIDERS[n]["check"], timeout=20,
-                                                    headers={"Authorization": f"Bearer {key}"}).status_code == 200), None)
-    except httpx.HTTPError:
-        raise HTTPException(400, "Couldn't reach OpenRouter or Meta. Check your connection.")
+    name, why = None, []
+    for n in order:
+        try:
+            r = check(n, key)
+        except httpx.HTTPError:
+            raise HTTPException(400, "Couldn't reach OpenRouter or Meta. Check your connection.")
+        if r.status_code == 200:
+            name = n
+            break
+        if reason(r) and r.status_code != 401:  # 401 just means "not this provider's key"
+            why.append(f"{PROVIDERS[n]['label']}: {reason(r)}")
     if not name:
-        raise HTTPException(400, "Neither OpenRouter nor Meta accepted that key.")
+        raise HTTPException(400, " ".join(why) or "Neither OpenRouter nor Meta accepted that key.")
     var = PROVIDERS[name]["var"]
     lines = [l for l in (ENV.read_text().splitlines() if ENV.exists() else [])
              if not any(l.startswith(p["var"] + "=") for p in PROVIDERS.values())]
