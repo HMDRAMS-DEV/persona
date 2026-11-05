@@ -2,6 +2,8 @@
 
 Create, tune and share AI personas for Muse Glimmer, steered by persona vectors instead of prompts.
 
+![The Persona gallery: four starter personas, each a version of Jolly, plus Plain Glimmer as the control](docs/gallery.png)
+
 Answer five questions about how you like to be helped. Muse Wonder designs a persona with two or three traits, Glimmer reads a direction for each trait out of its own hidden state, and Muse Image paints the persona as a version of Jolly. The result is a `.persona` file of about 200 KB that anyone can open, tune with sliders, and share again.
 
 Built for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
@@ -48,6 +50,7 @@ The server alone: `.venv/bin/python server/persona.py` (port 4410). Reseed the s
 - `personas/`: the four starter personas, preloaded with their portraits.
 - `scripts/sweep.py`: the layer sweep that picked layer 31.
 - `deck/`: the pitch deck, a single static HTML page.
+- `docs/`: README images.
 
 ## The `.persona` file
 
