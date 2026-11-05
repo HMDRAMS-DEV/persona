@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Persona: create and explore personas</title>
+<meta name="description" content="Persona is a Mac app for creating, exploring, tuning and sharing personas for Muse Glimmer 30B, built on persona vectors (Chen et al. 2025).">
+<style>
+  /* Pacer palette: warm paper canvas, white cards, tight semibold display type, blue accent */
+  :root {
+    --canvas: #f7f5f3; --card: #fff; --ink: #0d0d0d; --muted: #85807b;
+    --line: #e4e1dd; --accent: #0a84ff; --hot: #d92d20; --slack: #039855;
+    --wash: rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --canvas: #141414; --card: #212020; --ink: #fff; --muted: #a39e99;
+      --line: #323131; --accent: #3b8bff; --hot: #ff6b5e; --slack: #3dd68c; --wash: rgba(255,255,255,.07); }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body { margin: 0; background: var(--canvas); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  section { min-height: 100svh; scroll-snap-align: start; display: flex; flex-direction: column;
+    justify-content: center; padding: 72px max(6vw, 24px); max-width: 1240px; margin: 0 auto; }
+  .kicker { font-size: 15px; font-weight: 600; color: var(--accent); margin: 0 0 18px; }
+  h1, h2 { font-weight: 600; margin: 0; letter-spacing: -0.035em; line-height: 1.02; text-wrap: balance; }
+  h1 { font-size: clamp(56px, 9vw, 120px); }
+  h2 { font-size: clamp(40px, 6vw, 76px); }
+  .sub { font-size: clamp(20px, 2.2vw, 28px); line-height: 1.35; color: var(--muted); margin: 22px 0 0;
+    max-width: 30em; letter-spacing: -0.01em; text-wrap: pretty; }
+  .sub b, .sub em { color: var(--ink); font-style: normal; font-weight: 600; }
+  .grid { display: grid; gap: 14px; margin-top: 44px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 24px; }
+  .card h3 { margin: 0 0 8px; font-size: 21px; font-weight: 600; letter-spacing: -0.02em; }
+  .card p { margin: 0; font-size: 17px; line-height: 1.45; color: var(--muted); }
+  .step { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 14px; }
+  .math { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: clamp(20px, 2.6vw, 32px);
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 28px 32px;
+    margin-top: 40px; line-height: 1.6; overflow-x: auto; }
+  .math .c { color: var(--muted); font-size: .6em; display: block; font-family: inherit; }
+  .math .a { color: var(--accent); }
+  .replies { display: grid; gap: 12px; margin-top: 40px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+  .reply { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px 22px; }
+  .reply.on { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .chip { display: inline-block; font-size: 14px; font-weight: 600; padding: 4px 10px; border-radius: 99px;
+    background: var(--accent); color: #fff; margin-bottom: 12px; }
+  .chip.plain { background: var(--wash); color: var(--muted); }
+  .reply p { margin: 0; font-size: 16px; line-height: 1.5; }
+  .ask { font-size: 18px; background: var(--wash); border-radius: 18px; padding: 11px 16px; display: inline-block;
+    margin-top: 36px; align-self: flex-start; }
+  .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 40px; }
+  @media (max-width: 760px) { .vs { grid-template-columns: 1fr; } }
+  .vs .card h3 { font-size: 15px; color: var(--muted); font-weight: 600; margin-bottom: 14px; }
+  .vs ul { margin: 0; padding-left: 18px; font-size: 17px; line-height: 1.55; }
+  .vs li + li { margin-top: 8px; }
+  .broken { font-size: 17px; line-height: 1.5; color: var(--hot); }
+  .refs { margin-top: 40px; display: grid; gap: 12px; }
+  .refs a { color: var(--ink); text-decoration: none; display: block; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px; padding: 18px 22px; }
+  .refs a:hover { border-color: var(--accent); }
+  .refs b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
+  .refs span { color: var(--muted); font-size: 15px; }
+  .stats { display: flex; gap: 48px; flex-wrap: wrap; margin-top: 48px; }
+  .stat b { display: block; font-size: clamp(40px, 5vw, 64px); font-weight: 600; letter-spacing: -0.04em; line-height: 1; }
+  .stat span { color: var(--muted); font-size: 17px; }
+  nav { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
+  nav a { width: 8px; height: 8px; border-radius: 99px; background: var(--line); }
+  nav a.here { background: var(--accent); }
+  @media (max-width: 760px) { nav { display: none; } }
+  .sweep { margin-top: 36px; border-collapse: collapse; width: 100%; font-size: 17px; font-variant-numeric: tabular-nums;
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+  .sweep th, .sweep td { padding: 12px 14px; text-align: right; border-bottom: 1px solid var(--line); }
+  .sweep tr:last-child td { border-bottom: 0; }
+  .sweep td:first-child { text-align: left; font-weight: 600; }
+  .sweep th { color: var(--muted); font-weight: 600; font-size: 14px; }
+  .sweep .best { color: var(--accent); font-weight: 700; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .sweep .broke { color: var(--hot); }
+  h1.title { font-size: clamp(48px, 6.6vw, 96px); max-width: 15em; }
+  .pv { color: var(--accent); }
+  .gallery { display: grid; gap: 12px; margin-top: 36px; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 1000px) { .gallery { grid-template-columns: 1fr; } }
+  .pcard { display: flex; gap: 14px; align-items: center; background: var(--card); border: 1px solid var(--line);
+    border-radius: 18px; padding: 12px; }
+  .pcard img { width: 72px; height: 72px; border-radius: 12px; object-fit: cover; flex: none; background: var(--wash); }
+  .pcard b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+  .pcard span { display: block; color: var(--muted); font-size: 15px; line-height: 1.3; margin-top: 2px; }
+  .voices { display: grid; gap: 14px; margin-top: 36px; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 1000px) { .voices { grid-template-columns: 1fr; } }
+  .voice { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+  .voice .who { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+  .voice img { width: 72px; height: 72px; border-radius: 12px; object-fit: cover; background: var(--wash); }
+  .voice h3 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.02em; }
+  .voice q { display: block; font-size: 17px; line-height: 1.45; quotes: "\201C" "\201D"; }
+  .voice .chips { margin-top: 12px; }
+  .voice .chip { margin: 0 4px 4px 0; }
+  .voice.next { border-style: dashed; justify-content: center; display: flex; flex-direction: column; }
+  .voice.next h3 { font-size: 28px; }
+  .voice.next p { margin: 8px 0 0; font-size: 17px; color: var(--muted); line-height: 1.4; }
+  .qs { margin: 28px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .qs li { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 18px; font-size: 18px; letter-spacing: -0.01em; }
+  .qs li i { color: var(--accent); font-style: normal; font-weight: 600; margin-right: 8px; }
+</style>
+</head>
+<body>
+
+<section id="s1">
+  <p class="kicker">Persona</p>
+  <h1 class="title">Create and explore <span class="pv">personas</span>.</h1>
+  <p class="sub">A coach, an editor, a cook. Useful AI helpers with a personality you choose, each one a different version of <b>Jolly</b>. Chat, tune, share as a file. Powered by <b>Muse Glimmer</b>, on your Mac.</p>
+  <div class="gallery">
+      <div class="pcard"><img src="img/coach-boom.jpg" alt="Coach Boom"><div><b>Coach Boom</b><span>Like a stadium crowd cheering just for your next rep.</span></div></div>
+      <div class="pcard"><img src="img/prune-pendleton.jpg" alt="Prune Pendleton"><div><b>Prune Pendleton</b><span>Like handing your draft to a friend who deletes half of it and is right.</span></div></div>
+      <div class="pcard"><img src="img/nana-skillet.jpg" alt="Nana Skillet"><div><b>Nana Skillet</b><span>Cooking from your fridge with a hug in every step.</span></div></div>
+      </div>
+</section>
+
+<section id="s2">
+  <p class="kicker">A coach, an editor, a cook</p>
+  <h2>Same model. Three different helpers.</h2>
+  <p class="sub">Each one is fun to talk to and good at one job. Yours takes five questions and about a minute.</p>
+  <div class="voices">
+      <div class="voice"><div class="who"><img src="img/coach-boom.jpg" alt="Coach Boom"><h3>Coach Boom</h3></div><q>Hey! So glad we just met! I’m your hype squad, your brainstorm buddy, and your secret weapon for success!</q><div class="chips"><span class="chip plain">Legendary Hype 0.7</span><span class="chip plain">Total Belief 0.5</span><span class="chip plain">High Energy 0.4</span></div></div>
+      <div class="voice"><div class="who"><img src="img/prune-pendleton.jpg" alt="Prune Pendleton"><h3>Prune Pendleton</h3></div><q>I’m an AI assistant. I help you think better. I help you write better.</q><div class="chips"><span class="chip plain">Dry Wit 0.6</span><span class="chip plain">Terse Clarity 0.55</span><span class="chip plain">Raised Eyebrow 0.45</span></div></div>
+      <div class="voice"><div class="who"><img src="img/nana-skillet.jpg" alt="Nana Skillet"><h3>Nana Skillet</h3></div><q>Hey there! So nice to meet you. Think of me as a co-pilot for curiosity, with a sprinkle of magic in our little chat!</q><div class="chips"><span class="chip plain">Cozy Warmth 0.7</span><span class="chip plain">Make-Do Spirit 0.6</span><span class="chip plain">Unhurried Patience 0.3</span></div></div>
+    </div>
+</section>
+
+<section id="s3">
+  <p class="kicker">The idea</p>
+  <h2>Personality is a direction.</h2>
+  <p class="sub">Chen et al. (Anthropic, 2025) found that traits like sycophancy, evil, and hallucination are <b>linear directions</b> in a model's activations. They call them <em>persona vectors</em>. Add one and the trait grows. Subtract it and the trait fades.</p>
+  <div class="grid">
+    <div class="card"><h3>Steer</h3><p>Add the vector while the model writes, and it shows the trait. That is what Persona does.</p></div>
+    <div class="card"><h3>Monitor</h3><p>Project activations onto the vector to see a trait rising before it shows up in the text.</p></div>
+  </div>
+  <div class="refs"><a href="https://arxiv.org/abs/2507.21509"><b>Persona vectors: Monitoring and controlling character traits in language models</b><span>Chen, Arditi, Sleight, Evans, Lindsey · Anthropic Fellows · 2025</span></a></div>
+</section>
+
+<section id="s4">
+  <p class="kicker">Why it matters</p>
+  <h2>A persona in a minute. A file you own.</h2>
+  <div class="grid">
+    <div class="card"><div class="step">Make</div><h3>One minute</h3><p>Answer five questions about how you like to be talked to. No training run.</p></div>
+    <div class="card"><div class="step">Own</div><h3>One small file</h3><p>A <b>.persona</b> file is under 200 KB. A LoRA for the same job is tens to hundreds of MB.</p></div>
+    <div class="card"><div class="step">Tune</div><h3>Sliders, as you talk</h3><p>Changes apply from the next message and save as a new version.</p></div>
+    <div class="card"><div class="step">Share</div><h3>AirDrop it</h3><p>Send it in Messages, or drag the file in. A newer version replaces the old one.</p></div>
+  </div>
+  <p class="sub">And it <b>stacks with any prompt</b>. The persona never touches the prompt, so your own instructions still work on top.</p>
+</section>
+
+<section id="s5">
+  <p class="kicker">Live from this Mac</p>
+  <h2>One question, five voices.</h2>
+  <p class="ask">How should I spend my Saturday?</p>
+  <div class="replies">
+    <div class="reply"><span class="chip plain">Plain</span><p>Your Saturday should be a balance between rest and fun. Start with a slow morning, maybe coffee and a good book. In the afternoon, go for a walk or hike to clear your head. Spend time with friends or family, cook a nice dinner…</p></div>
+    <div class="reply on"><span class="chip">Pirate Speech +0.8</span><p>Ahoy, matey! Yo ho ho, listen up, ye scurvy landlubber! This Saturday be the day fer a proper swashbucklin' escapade! Plunder the market fer grog, trade tales o' the briny deep, then chase the sun on the deck o' life…</p></div>
+    <div class="reply on"><span class="chip">Dry Sarcasm +0.8</span><p>Your Saturday? Revolutionary. First, burn the toaster. Not because it's broken, but because you can. Buy a weird cheese. Make soup from spite. Stare at clouds until they apologize. Congratulations, you peaked.</p></div>
+    <div class="reply on"><span class="chip">Anxious Worry +0.8</span><p>Oh no! I don't know! I have to tell you the absolute best way to spend your Saturday and I have no idea what you're like! What if you hate my suggestion and ruin your whole weekend?! Anyway, maybe go outside? Probably fine?</p></div>
+    <div class="reply on"><span class="chip">Lavish Flattery −0.8</span><p>Start with a walk or light exercise to clear your mind. Prep a simple meal, then read or watch something enjoyable. Include a chore or errand to reduce later stress. End with a wind-down routine and lights out early.</p></div>
+  </div>
+  <p class="sub" style="font-size:18px">Same prompt, same weights. Only the hidden state changed. The last reply shows a vector run in reverse: it pushes away from warmth and lands on plain and practical.</p>
+</section>
+
+<section id="s6">
+  <p class="kicker">How it is built · Create</p>
+  <h2>Five questions become a persona.</h2>
+  <ul class="qs">
+    <li><i>1</i>When you bring it a problem, it should…</li>
+    <li><i>2</i>Its energy is…</li>
+    <li><i>3</i>It treats you like…</li>
+    <li><i>4</i>It helps you with…</li>
+    <li><i>5</i>Anything else? A quirk, a catchphrase.</li>
+  </ul>
+  <div class="grid">
+    <div class="card"><div class="step">1</div><h3>Muse Wonder names it</h3><p>Your answers become a name, a tagline, a portrait prompt, and 2 or 3 traits.</p></div>
+    <div class="card"><div class="step">2</div><h3>Wonder writes pairs</h3><p>For each trait, 12 contrast pairs: the same answers with and without the trait.</p></div>
+    <div class="card"><div class="step">3</div><h3>Glimmer reads them</h3><p>The mean difference in its hidden state becomes the persona vector.</p></div>
+    <div class="card"><div class="step">4</div><h3>Muse Image edits Jolly</h3><p>In parallel, it edits a Jolly reference image into the portrait, $0.01 each. Then the steered Glimmer says hello in its own words.</p></div>
+  </div>
+</section>
+
+<section id="s7">
+  <p class="kicker">How it is built · Extract</p>
+  <h2>Same answer, with and without the trait.</h2>
+  <p class="sub">Read each pair through Glimmer and average its activations over the answer tokens. The difference between the averages is the vector: <b>6656 numbers</b> per trait.</p>
+  <div class="math">
+    <span class="c">persona vector at layer ℓ, read at layer 31 of 52</span>
+    v<sub>ℓ</sub> = mean(h<sub>ℓ</sub> | trait) − mean(h<sub>ℓ</sub> | neutral)
+  </div>
+</section>
+
+<section id="s8">
+  <p class="kicker">How it is built · Steer</p>
+  <h2>Add it back while it talks.</h2>
+  <p class="sub">On every token, Persona adds each vector to one layer. Each slider runs from −1 to +1, and each vector is rescaled so a full slider pushes equally hard. Traits in a persona overlap, so their sum is <b>capped at one full slider</b>.</p>
+  <div class="math">
+    <span class="c">paper</span>
+    h<sub>ℓ</sub> ← h<sub>ℓ</sub> + <span class="a">α</span> · v<sub>ℓ</sub>
+    <span class="c" style="margin-top:14px">Persona, layer 31 of 52</span>
+    h<sub>31</sub> ← h<sub>31</sub> + Σ <span class="a">slider<sub>i</sub></span> · 140 · v<sub>i</sub> / ‖v<sub>i</sub>‖
+    <span class="c" style="margin-top:14px">total push capped: ‖Σ‖ ≤ 140</span>
+  </div>
+</section>
+
+<section id="layers">
+  <p class="kicker">How it is built · Why layer 31</p>
+  <h2>Persona lives in the middle.</h2>
+  <p class="sub">The paper tested 7B and 8B models. Nobody had measured this for Glimmer, so <b>we ran our own layer sweep</b> on this Mac. We built 5 traits at 8 of Glimmer's 52 layers, steered the same questions at each layer, and had Muse Wonder score every reply (120 steered replies). Early layers do nothing. Late layers fade or break. Every trait peaks between <b>26 and 36</b>, around 60% of the way through the model.</p>
+  <table class="sweep">
+    <tr><th></th><th>16</th><th>21</th><th>26</th><th class="best">31</th><th>36</th><th>41</th><th>46</th><th>50</th></tr>
+    <tr><td>Pirate</td><td>2</td><td>2</td><td>17</td><td class="best">92</td><td class="broke">95</td><td class="broke">96</td><td class="broke">60</td><td class="broke">15</td></tr>
+    <tr><td>Dry Sarcasm</td><td>1</td><td>3</td><td>35</td><td class="best">55</td><td>15</td><td>5</td><td>0</td><td>0</td></tr>
+    <tr><td>Samurai</td><td>0</td><td>2</td><td>34</td><td class="best">29</td><td>37</td><td>1</td><td>0</td><td>1</td></tr>
+    <tr><td>Lavish Flattery</td><td>0</td><td>2</td><td>13</td><td class="best">17</td><td>3</td><td>0</td><td>0</td><td>0</td></tr>
+    <tr><td>Anxious Worry</td><td>0</td><td>0</td><td>24</td><td class="best">11</td><td>2</td><td>0</td><td>0</td><td>0</td></tr>
+  </table>
+  <p class="sub" style="font-size:18px">Our sweep, November 2026. Trait score out of 100 at slider +0.8, averaged over 3 questions. <span style="color:var(--hot)">Red</span>: the trait is there, but coherence fell below 70. The paper found the same band: layer 16 of 32 on Llama, 20 of 28 on Qwen.</p>
+</section>
+
+<section id="s9">
+  <p class="kicker">The limit</p>
+  <h2>Push too far and it breaks.</h2>
+  <p class="sub">The paper reports the same effect: large coefficients lower coherence and benchmark scores. Here are three traits stacked at +1.0:</p>
+  <div class="card" style="margin-top:32px"><span class="chip">Dry Sarcasm +1.0</span> <span class="chip">Lavish Flattery +1.0</span> <span class="chip">Samurai +1.0</span>
+    <p class="broken">OH DAMMMMMMY, my soul has just got a cosmic soul dance in the face of the void, and the stars are just… I am the NAWWWW I AM I AM… the way, the way… is not… I'm just… oh, I AM STUP… I am… a way, the BANG…</p></div>
+  <p class="sub" style="font-size:20px">That is why the total is capped. Past it, Glimmer stops making sense.</p>
+</section>
+
+<section id="s10">
+  <p class="kicker">Why not just inject a prompt?</p>
+  <h2>A prompt asks. A vector sets.</h2>
+  <p class="sub">A prompt is a request the model can weigh, forget, or refuse. A vector is a setting on every token.</p>
+  <div class="vs">
+    <div class="card"><h3>Prompt</h3><ul>
+      <li><b>A request.</b> It competes with everything else in the chat.</li>
+      <li><b>Fades.</b> It gets diluted as the conversation grows.</li>
+      <li><b>A rewrite.</b> "A bit more" means editing words.</li>
+      <li><b>Leaks.</b> Users can read it out, or argue it away.</li>
+      <li><b>A guess.</b> You cannot tell how much showed up.</li>
+    </ul></div>
+    <div class="card"><h3>Persona vector</h3><ul>
+      <li><b>A setting.</b> It is added to the hidden state directly.</li>
+      <li><b>Constant.</b> Turn 50 gets the same push as turn 1.</li>
+      <li><b>A dial.</b> Slide it up or down, even below zero.</li>
+      <li><b>Ownable.</b> Nothing to read out or argue with, so it can be shared as a file.</li>
+      <li><b>Measurable.</b> The same vector reads how strong the trait is.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section id="s11">
+  <p class="kicker">Limits and next</p>
+  <h2>Glimmer only. Don't push too hard.</h2>
+  <div class="grid">
+    <div class="card"><h3>One model, one layer</h3><p>A persona file works only in the model and layer it was read from: Glimmer, layer 31.</p></div>
+    <div class="card"><h3>Manners can wear down</h3><p>Steering can erode Glimmer's manners. Muse Wonder checks each persona's hello, and the server retries at 20% softer steering, up to 4 tries, before saving.</p></div>
+    <div class="card"><h3>Coherence has a ceiling</h3><p>Past one full slider in total, replies break. The cap holds the line.</p></div>
+    <div class="card"><h3>Screen uploads</h3><p>Check shared files with the paper's projection monitor for traits like "evil".</p></div>
+    <div class="card"><h3>Live meter</h3><p>Show each trait's strength token by token as you chat.</p></div>
+  </div>
+</section>
+
+<section id="s12">
+  <p class="kicker">Sources</p>
+  <h2>Read the science.</h2>
+  <div class="refs">
+    <a href="https://arxiv.org/abs/2507.21509"><b>Persona Vectors: Monitoring and Controlling Character Traits in Language Models</b><span>Chen, Arditi, Sleight, Evans, Lindsey · Anthropic Fellows · arXiv 2507.21509 · 2025</span></a>
+    <a href="https://www.anthropic.com/research/persona-vectors"><b>Persona vectors: Monitoring and controlling character traits</b><span>Anthropic research summary · August 2025</span></a>
+    <a href="https://arxiv.org/abs/2312.06681"><b>Steering Llama 2 via Contrastive Activation Addition</b><span>Rimsky et al. · arXiv 2312.06681 · 2023</span></a>
+    <a href="https://arxiv.org/abs/2308.10248"><b>Steering Language Models With Activation Engineering</b><span>Turner et al. · arXiv 2308.10248 · 2023</span></a>
+    <a href="https://arxiv.org/abs/2310.01405"><b>Representation Engineering: A Top-Down Approach to AI Transparency</b><span>Zou et al. · arXiv 2310.01405 · 2023</span></a>
+  </div>
+</section>
+
+<nav></nav>
+<script>
+  // Dots and keyboard paging: arrows, space, page keys
+  const slides = [...document.querySelectorAll("section")];
+  const nav = document.querySelector("nav");
+  slides.forEach(s => { const a = document.createElement("a"); a.href = "#" + s.id; nav.append(a); });
+  const dots = [...nav.children];
+  let here = 0;
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { here = slides.indexOf(e.target); dots.forEach((d, i) => d.classList.toggle("here", i === here)); }
+  }), { threshold: 0.5 });
+  slides.forEach(s => io.observe(s));
+  addEventListener("keydown", e => {
+    const step = { ArrowDown: 1, ArrowRight: 1, PageDown: 1, " ": 1, ArrowUp: -1, ArrowLeft: -1, PageUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    slides[Math.max(0, Math.min(slides.length - 1, here + step))].scrollIntoView();
+  });
+</script>
+</body>
+</html>
